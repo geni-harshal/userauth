@@ -17,7 +17,7 @@ public class EmailService {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(email);
         message.setSubject("Your OTP for Registration");
-        message.setText("Your OTP is: " + otp);
+        message.setText("Your OTP is: " + otp + "\n\nIt will expire shortly. If you did not request this, ignore.");
         mailSender.send(message);
     }
 }
