@@ -8,10 +8,11 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
+import java.security.SecureRandom;
 
 @Service
 public class OtpService {
-
+    private final SecureRandom secureRandom = new SecureRandom();
     private final MemcachedClient memcachedClient;
     private final BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
 
@@ -44,8 +45,9 @@ public class OtpService {
      */
     public String generateOtp(String email) {
         // generate 6-digit numeric OTP
-        int raw = 100000 + (int)(Math.random() * 900000);
-        String otp = String.valueOf(raw);
+        int rawOtp = 100000 + secureRandom.nextInt(900000);
+        String otp = String.valueOf(rawOtp);
+
 
         String hashed = bcrypt.encode(otp);
 

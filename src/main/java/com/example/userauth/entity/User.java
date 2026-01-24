@@ -22,7 +22,8 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
-    private boolean isEmailVerified;
+    private boolean emailVerified;
+
 
     private String password;
 

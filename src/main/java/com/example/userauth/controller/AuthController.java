@@ -1,8 +1,6 @@
 package com.example.userauth.controller;
 
-import com.example.userauth.dto.ApiResponse;
-import com.example.userauth.dto.OtpRequest;
-import com.example.userauth.dto.RegisterRequest;
+import com.example.userauth.dto.*;
 import com.example.userauth.service.AuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,34 +15,71 @@ public class AuthController {
         this.authService = authService;
     }
 
-    // 1) send otp
+    // 1) Send OTP
     @PostMapping("/send-otp")
-    public ResponseEntity<ApiResponse<Object>> sendOtp(@RequestParam String email) {
-        long seconds = authService.sendOtp(email); // if fails throws ApiException
-        return ResponseEntity.ok(new ApiResponse<>(true, "OTP sent to email (check inbox).", 
-                new Object() { public final long expiresInSeconds = seconds; }));
+    public ResponseEntity<ApiResponse<OtpResponse>> sendOtp(@RequestParam String email) {
+        long seconds = authService.sendOtp(email);
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "OTP sent to email", new OtpResponse(seconds))
+        );
     }
 
-    // 2) resend otp
+    // 2) Resend OTP
     @PostMapping("/resend-otp")
-    public ResponseEntity<ApiResponse<Object>> resendOtp(@RequestParam String email) {
+    public ResponseEntity<ApiResponse<OtpResponse>> resendOtp(@RequestParam String email) {
         long seconds = authService.resendOtp(email);
-        return ResponseEntity.ok(new ApiResponse<>(true, "OTP resent to email.", 
-                new Object() { public final long expiresInSeconds = seconds; }));
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "OTP resent", new OtpResponse(seconds))
+        );
     }
 
-    // 3) verify otp
+    // 3) Verify OTP
     @PostMapping("/verify-otp")
-    public ResponseEntity<ApiResponse<Object>> verifyOtp(@RequestBody OtpRequest request) {
-        authService.verifyOtp(request.getEmail(), request.getOtp()); // throws if invalid
-        return ResponseEntity.ok(new ApiResponse<>(true, "OTP verified. Proceed to register within the allowed time.",
-                null));
+    public ResponseEntity<ApiResponse<Void>> verifyOtp(@RequestBody OtpRequest request) {
+        authService.verifyOtp(request.getEmail(), request.getOtp());
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "OTP verified", null)
+        );
     }
 
-    // 4) register
+    // 4) Register
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<Object>> register(@RequestBody RegisterRequest request) {
-        authService.register(request.getUsername(), request.getEmail(), request.getPassword(), request.getConfirmPassword());
-        return ResponseEntity.ok(new ApiResponse<>(true, "User registered successfully", null));
+    public ResponseEntity<ApiResponse<Void>> register(@RequestBody RegisterRequest request) {
+        authService.register(
+                request.getUsername(),
+                request.getEmail(),
+                request.getPassword(),
+                request.getConfirmPassword()
+        );
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "User registered successfully", null)
+        );
+    }
+
+    // 5) Login
+    @PostMapping("/login")
+    public ResponseEntity<ApiResponse<LoginResponse>> login(@RequestBody LoginRequest request) {
+        LoginResponse response = authService.login(request);
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "Login successful", response)
+        );
+    }
+
+    // 6) Logout
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @RequestHeader("Authorization") String authorization) {
+
+        if (!authorization.startsWith("Bearer ")) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(false, "Invalid Authorization header", null));
+        }
+
+        String token = authorization.substring(7);
+        authService.logout(token);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "Logged out successfully", null)
+        );
     }
 }
