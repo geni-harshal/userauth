@@ -21,33 +21,46 @@ public class AuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
+
+        // ✅ CRITICAL: allow CORS preflight
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+
         String path = request.getRequestURI();
-        // skip auth endpoints and health
         return path.startsWith("/api/auth") || path.equals("/");
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
+                                    FilterChain filterChain)
+            throws ServletException, IOException {
 
         String auth = request.getHeader("Authorization");
+
         if (auth == null || !auth.startsWith("Bearer ")) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("{\"success\":false,\"message\":\"Missing Authorization header\"}");
-            return;
-        }
-        String token = auth.substring(7);
-        String key = "auth:token:" + token;
-        Object val = memcachedClient.get(key);
-        if (val == null) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("{\"success\":false,\"message\":\"Invalid or expired token\"}");
+            response.setContentType("application/json");
+            response.getWriter()
+                    .write("{\"success\":false,\"message\":\"Missing Authorization header\"}");
             return;
         }
 
-        // token valid — you can optionally set attributes for controllers:
-        // request.setAttribute("authUser", val.toString());
+        String token = auth.substring(7);
+        Object val = memcachedClient.get("auth:token:" + token);
+
+        if (val == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter()
+                    .write("{\"success\":false,\"message\":\"Invalid or expired token\"}");
+            return;
+        }
+
+        // ✅ pass logged-in user to controllers
+        // format = "userId|email"
+        request.setAttribute("authUser", val.toString());
 
         filterChain.doFilter(request, response);
     }
