@@ -8,6 +8,8 @@ import com.example.userauth.exception.ApiException;
 import com.example.userauth.repository.LoginActivityRepository;
 import com.example.userauth.repository.UserRepository;
 import com.example.userauth.util.JwtUtil;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import net.spy.memcached.MemcachedClient;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ public class AuthService {
     private final EmailService emailService;
     private final JwtUtil jwtUtil;
     private final MemcachedClient memcachedClient;
+    private final EntityManager entityManager;
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
@@ -35,13 +38,15 @@ public class AuthService {
                        OtpService otpService,
                        EmailService emailService,
                        JwtUtil jwtUtil,
-                       MemcachedClient memcachedClient) {
+                       MemcachedClient memcachedClient,
+                       EntityManager entityManager) {
         this.userRepository = userRepository;
         this.loginActivityRepository = loginActivityRepository;
         this.otpService = otpService;
         this.emailService = emailService;
         this.jwtUtil = jwtUtil;
         this.memcachedClient = memcachedClient;
+        this.entityManager = entityManager;
     }
 
     /* =========================
@@ -61,7 +66,6 @@ public class AuthService {
 
         String otp = otpService.generateOtp(email);
         emailService.sendOtpEmail(email, otp);
-
         return otpService.getRemainingSeconds(email);
     }
 
@@ -84,8 +88,7 @@ public class AuthService {
     public void verifyOtp(String email, String otp) {
         email = email.trim().toLowerCase();
 
-        boolean ok = otpService.verifyOtp(email, otp);
-        if (!ok) {
+        if (!otpService.verifyOtp(email, otp)) {
             throw new ApiException("Invalid or expired OTP");
         }
     }
@@ -109,6 +112,7 @@ public class AuthService {
         user.setEmail(email);
         user.setPassword(encoder.encode(password));
         user.setEmailVerified(true);
+        user.setLoggedIn(false); // IMPORTANT
 
         userRepository.save(user);
         otpService.clearTemporaryVerified(email);
@@ -121,21 +125,53 @@ public class AuthService {
     @Transactional
     public LoginResponse login(LoginRequest request) {
         String email = request.getEmail().trim().toLowerCase();
+        boolean force = request.isForce();
 
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Email not found"));
+
+        // 🔒 LOCK USER ROW (prevents double-login race condition)
+        entityManager.lock(user, LockModeType.PESSIMISTIC_WRITE);
 
         if (!encoder.matches(request.getPassword(), user.getPassword())) {
             throw new ApiException("Invalid password");
         }
 
+        // 🔴 Already logged in case
+        if (user.isLoggedIn()) {
+            if (!force) {
+                throw new ApiException("User already logged in");
+            } else {
+                // force login → invalidate previous token
+                String userTokenKey = "auth:user:" + user.getId() + ":token";
+                Object oldToken = memcachedClient.get(userTokenKey);
+                if (oldToken != null) {
+                    memcachedClient.delete("auth:token:" + oldToken);
+                    memcachedClient.delete(userTokenKey);
+                }
+            }
+        }
+
         // generate JWT
         String token = jwtUtil.generateToken(user.getEmail(), user.getId(), TOKEN_TTL_SECONDS);
 
-        // store token in memcached
-        String cacheKey = "auth:token:" + token;
-        String cacheValue = user.getId() + "|" + user.getEmail();
-        memcachedClient.set(cacheKey, TOKEN_TTL_SECONDS, cacheValue);
+        // store token → user
+        memcachedClient.set(
+                "auth:token:" + token,
+                TOKEN_TTL_SECONDS,
+                user.getId() + "|" + user.getEmail()
+        );
+
+        // store user → token
+        memcachedClient.set(
+                "auth:user:" + user.getId() + ":token",
+                TOKEN_TTL_SECONDS,
+                token
+        );
+
+        // mark user logged in
+        user.setLoggedIn(true);
+        userRepository.save(user);
 
         // save login activity
         LoginActivity activity = LoginActivity.builder()
@@ -143,35 +179,40 @@ public class AuthService {
                 .email(user.getEmail())
                 .loginTime(LocalDateTime.now())
                 .build();
-
         loginActivityRepository.save(activity);
 
         return new LoginResponse(token, TOKEN_TTL_SECONDS);
     }
 
-@Transactional
-public void logout(String token) {
+    @Transactional
+    public void logout(String token) {
 
-    String key = "auth:token:" + token;
-    Object val = memcachedClient.get(key);
+        String key = "auth:token:" + token;
+        Object val = memcachedClient.get(key);
 
-    // 🔴 IMPORTANT: token not found = expired or already logged out
-    if (val == null) {
-        throw new ApiException("Invalid or expired token");
+        if (val == null) {
+            throw new ApiException("Invalid or expired token");
+        }
+
+        String[] parts = val.toString().split("\\|");
+        Long userId = Long.parseLong(parts[0]);
+
+        // delete token mappings
+        memcachedClient.delete(key);
+        memcachedClient.delete("auth:user:" + userId + ":token");
+
+        // mark user logged out
+        userRepository.findById(userId).ifPresent(user -> {
+            entityManager.lock(user, LockModeType.PESSIMISTIC_WRITE);
+            user.setLoggedIn(false);
+            userRepository.save(user);
+        });
+
+        // update logout time
+        loginActivityRepository.findTopByUserIdOrderByLoginTimeDesc(userId)
+                .ifPresent(activity -> {
+                    activity.setLogoutTime(LocalDateTime.now());
+                    loginActivityRepository.save(activity);
+                });
     }
-
-    String[] parts = val.toString().split("\\|");
-    Long userId = Long.parseLong(parts[0]);
-
-    // delete token
-    memcachedClient.delete(key);
-
-    // update logout time
-    loginActivityRepository.findTopByUserIdOrderByLoginTimeDesc(userId)
-            .ifPresent(activity -> {
-                activity.setLogoutTime(LocalDateTime.now());
-                loginActivityRepository.save(activity);
-            });
-}
-
 }

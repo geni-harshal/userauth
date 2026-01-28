@@ -24,6 +24,8 @@ public class User {
 
     private boolean emailVerified;
 
+    @Column(name = "is_logged_in")
+    private boolean loggedIn = false;
 
     private String password;
 
