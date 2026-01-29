@@ -5,6 +5,7 @@ import com.example.userauth.entity.*;
 import com.example.userauth.exception.ApiException;
 import com.example.userauth.repository.CompanyRepository;
 import com.example.userauth.repository.UserRepository;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,22 +18,24 @@ public class CompanyService {
     private final CompanyRepository companyRepository;
     private final UserRepository userRepository;
 
-    public CompanyService(CompanyRepository companyRepository,
-                          UserRepository userRepository) {
+    public CompanyService(
+            CompanyRepository companyRepository,
+            UserRepository userRepository
+    ) {
         this.companyRepository = companyRepository;
         this.userRepository = userRepository;
     }
 
-    /* ===============================
-       LIST
-       =============================== */
-    public List<Company> listAll() {
-        return companyRepository.findAll();
+    /* =====================================================
+       LIST – ONLY COMPANIES CREATED BY LOGGED-IN USER
+       ===================================================== */
+    public List<Company> listByUser(Long userId) {
+        return companyRepository.findByCreatedBy_Id(userId);
     }
 
-    /* ===============================
+    /* =====================================================
        CREATE
-       =============================== */
+       ===================================================== */
     @Transactional
     public Company createCompany(CompanyCreateRequest req, Long creatorUserId) {
 
@@ -48,7 +51,7 @@ public class CompanyService {
         company.setIndustry(req.getIndustry());
         company.setCreatedBy(creator);
 
-        /* -------- Owner Support -------- */
+        /* -------- Owner Additional Support -------- */
         if (req.getOwnerAdditionalSupport() != null) {
             OwnerAdditionalSupport os = OwnerAdditionalSupport.builder()
                     .ownerPersonalNetWorth(
@@ -92,34 +95,49 @@ public class CompanyService {
             company.setAccountConduct(conduct);
         }
 
-        // Save once to get ID
+        // Save once to generate ID
         Company saved = companyRepository.save(company);
 
-        // Generate borrowerId: BRW000001
+        // Generate Borrower ID: BRW000001
         saved.setBorrowerId(String.format("BRW%06d", saved.getId()));
 
         return companyRepository.save(saved);
     }
 
-    /* ===============================
-       FIND BY ID
-       =============================== */
+    /* =====================================================
+       FIND BY ID (ADMIN / INTERNAL)
+       ===================================================== */
     public Optional<Company> findById(Long id) {
         return companyRepository.findById(id);
     }
 
-    /* ===============================
-       DELETE (NEW)
-       =============================== */
+    /* =====================================================
+       FIND BY ID + USER (SECURE)
+       ===================================================== */
+    public Optional<Company> findByIdAndUser(Long id, Long userId) {
+        return companyRepository.findByIdAndCreatedBy_Id(id, userId);
+    }
+
+    /* =====================================================
+       DELETE (ADMIN / INTERNAL)
+       ===================================================== */
     @Transactional
     public void deleteById(Long id) {
         Company company = companyRepository.findById(id)
                 .orElseThrow(() -> new ApiException("Company not found"));
+        companyRepository.delete(company);
+    }
 
-        // Cascades will delete:
-        // - OwnerAdditionalSupport
-        // - AccountStatus
-        // - AccountConduct
+    /* =====================================================
+       DELETE BY USER (SECURE)
+       ===================================================== */
+    @Transactional
+    public void deleteByIdAndUser(Long id, Long userId) {
+        Company company = companyRepository
+                .findByIdAndCreatedBy_Id(id, userId)
+                .orElseThrow(() ->
+                        new ApiException("Company not found or access denied"));
+
         companyRepository.delete(company);
     }
 }

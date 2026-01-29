@@ -5,6 +5,8 @@ import lombok.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalDateTime;
+
 
 @Entity
 @Table(name = "companies")
@@ -35,6 +37,16 @@ public class Company {
     private String relationshipManager;
 
     private String industry;
+
+
+    @Column(name = "pdf_path")
+    private String pdfPath;
+
+    @Column(name = "analysis_json", columnDefinition = "TEXT")
+    private String analysisJson;
+
+    @Column(name = "analyzed_at")
+    private LocalDateTime analyzedAt;
 
     // Which user (creator/admin) created this company
     @ManyToOne(fetch = FetchType.LAZY)

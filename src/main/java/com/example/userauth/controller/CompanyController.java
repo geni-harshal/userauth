@@ -4,6 +4,7 @@ import com.example.userauth.dto.*;
 import com.example.userauth.entity.Company;
 import com.example.userauth.service.CompanyService;
 
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,7 +23,7 @@ public class CompanyController {
     }
 
     /* ===============================
-       CREATE
+       CREATE (JSON ONLY – NO PDF)
        =============================== */
     @PostMapping
     public ResponseEntity<ApiResponse<CompanyResponse>> createCompany(
@@ -31,8 +32,7 @@ public class CompanyController {
     ) {
         Object authUser = request.getAttribute("authUser");
         if (authUser == null) {
-            return ResponseEntity
-                    .status(401)
+            return ResponseEntity.status(401)
                     .body(new ApiResponse<>(false, "Unauthorized", null));
         }
 
@@ -60,12 +60,12 @@ public class CompanyController {
     ) {
         Object authUser = request.getAttribute("authUser");
         if (authUser == null) {
-            return ResponseEntity
-                    .status(401)
+            return ResponseEntity.status(401)
                     .body(new ApiResponse<>(false, "Unauthorized", null));
         }
 
-        companyService.deleteById(id);
+        Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
+        companyService.deleteByIdAndUser(id, userId);
 
         return ResponseEntity.ok(
                 new ApiResponse<>(true, "Company deleted successfully", null)
@@ -77,9 +77,18 @@ public class CompanyController {
        =============================== */
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<CompanyResponse>> getCompany(
-            @PathVariable Long id
+            @PathVariable Long id,
+            HttpServletRequest request
     ) {
-        return companyService.findById(id)
+        Object authUser = request.getAttribute("authUser");
+        if (authUser == null) {
+            return ResponseEntity.status(401)
+                    .body(new ApiResponse<>(false, "Unauthorized", null));
+        }
+
+        Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
+
+        return companyService.findByIdAndUser(id, userId)
                 .map(c -> ResponseEntity.ok(
                         new ApiResponse<>(true, "Company found",
                                 new CompanyResponse(
@@ -93,12 +102,21 @@ public class CompanyController {
     }
 
     /* ===============================
-       LIST
+       LIST (🔥 ONLY LOGGED-IN USER)
        =============================== */
     @GetMapping
-    public ResponseEntity<ApiResponse<List<CompanyListItem>>> listCompanies() {
+    public ResponseEntity<ApiResponse<List<CompanyListItem>>> listCompanies(
+            HttpServletRequest request
+    ) {
+        Object authUser = request.getAttribute("authUser");
+        if (authUser == null) {
+            return ResponseEntity.status(401)
+                    .body(new ApiResponse<>(false, "Unauthorized", null));
+        }
 
-        List<CompanyListItem> dto = companyService.listAll()
+        Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
+
+        List<CompanyListItem> dto = companyService.listByUser(userId)
                 .stream()
                 .map(c -> new CompanyListItem(
                         c.getId(),
@@ -110,23 +128,82 @@ public class CompanyController {
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(
-                new ApiResponse<>(true, "Companies list", dto)
+                new ApiResponse<>(true, "My companies", dto)
         );
     }
 
     /* ===============================
-       DETAILS
+       DETAILS (FULL FORM VIEW)
        =============================== */
     @GetMapping("/{id}/details")
     public ResponseEntity<ApiResponse<CompanyDetailsDTO>> getCompanyDetails(
-            @PathVariable Long id
+            @PathVariable Long id,
+            HttpServletRequest request
     ) {
-        return companyService.findById(id)
+        Object authUser = request.getAttribute("authUser");
+        if (authUser == null) {
+            return ResponseEntity.status(401)
+                    .body(new ApiResponse<>(false, "Unauthorized", null));
+        }
+
+        Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
+
+        return companyService.findByIdAndUser(id, userId)
                 .map(c -> ResponseEntity.ok(
                         new ApiResponse<>(true, "Company details", mapToDetails(c))
                 ))
                 .orElseGet(() -> ResponseEntity.status(404)
                         .body(new ApiResponse<>(false, "Company not found", null)));
+    }
+
+    /* ===============================
+       🔥 ANALYSIS (FINANCIAL SPREADING)
+       =============================== */
+    @GetMapping(
+            value = "/{id}/analysis",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<?> getCompanyAnalysis(
+            @PathVariable Long id,
+            HttpServletRequest request
+    ) {
+        Object authUser = request.getAttribute("authUser");
+        if (authUser == null) {
+            return ResponseEntity.status(401).body("Unauthorized");
+        }
+
+        Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
+
+        return companyService.findByIdAndUser(id, userId)
+                .map(c -> {
+                    if (c.getAnalysisJson() == null) {
+                        return ResponseEntity.noContent().build();
+                    }
+                    return ResponseEntity.ok(c.getAnalysisJson());
+                })
+                .orElseGet(() -> ResponseEntity.status(404)
+                        .body("Company not found"));
+    }
+
+    /* ===============================
+       PDF PATH (DEBUG)
+       =============================== */
+    @GetMapping("/{id}/pdf-path")
+    public ResponseEntity<?> getPdfPath(
+            @PathVariable Long id,
+            HttpServletRequest request
+    ) {
+        Object authUser = request.getAttribute("authUser");
+        if (authUser == null) {
+            return ResponseEntity.status(401).body("Unauthorized");
+        }
+
+        Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
+
+        return companyService.findByIdAndUser(id, userId)
+                .map(c -> ResponseEntity.ok(c.getPdfPath()))
+                .orElseGet(() -> ResponseEntity.status(404)
+                        .body("Company not found"));
     }
 
     /* ===============================
