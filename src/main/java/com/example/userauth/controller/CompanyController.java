@@ -3,7 +3,7 @@ package com.example.userauth.controller;
 import com.example.userauth.dto.*;
 import com.example.userauth.entity.Company;
 import com.example.userauth.service.CompanyService;
-import com.example.userauth.dto.ApiResponse;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,63 +21,120 @@ public class CompanyController {
         this.companyService = companyService;
     }
 
-    // Create a company (protected route)
+    /* ===============================
+       CREATE
+       =============================== */
     @PostMapping
-    public ResponseEntity<ApiResponse<CompanyResponse>> createCompany(@RequestBody CompanyCreateRequest req,
-                                                                      HttpServletRequest request) {
-        // read logged-in user from AuthFilter attribute "authUser" -> "userId|email"
+    public ResponseEntity<ApiResponse<CompanyResponse>> createCompany(
+            @RequestBody CompanyCreateRequest req,
+            HttpServletRequest request
+    ) {
         Object authUser = request.getAttribute("authUser");
         if (authUser == null) {
-            return ResponseEntity.status(401).body(new ApiResponse<>(false, "Unauthorized", null));
+            return ResponseEntity
+                    .status(401)
+                    .body(new ApiResponse<>(false, "Unauthorized", null));
         }
-        String s = authUser.toString();
-        Long userId = Long.parseLong(s.split("\\|")[0]);
 
+        Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
         Company saved = companyService.createCompany(req, userId);
 
-        CompanyResponse resp = new CompanyResponse(saved.getId(), saved.getBorrowerId(), saved.getCompanyName());
-        return ResponseEntity.ok(new ApiResponse<>(true, "Company created", resp));
+        CompanyResponse resp = new CompanyResponse(
+                saved.getId(),
+                saved.getBorrowerId(),
+                saved.getCompanyName()
+        );
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "Company created", resp)
+        );
     }
 
-    // Simple get by id (existing)
+    /* ===============================
+       DELETE
+       =============================== */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteCompany(
+            @PathVariable Long id,
+            HttpServletRequest request
+    ) {
+        Object authUser = request.getAttribute("authUser");
+        if (authUser == null) {
+            return ResponseEntity
+                    .status(401)
+                    .body(new ApiResponse<>(false, "Unauthorized", null));
+        }
+
+        companyService.deleteById(id);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "Company deleted successfully", null)
+        );
+    }
+
+    /* ===============================
+       GET (SIMPLE)
+       =============================== */
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<CompanyResponse>> getCompany(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<CompanyResponse>> getCompany(
+            @PathVariable Long id
+    ) {
         return companyService.findById(id)
-                .map(c -> ResponseEntity.ok(new ApiResponse<>(true, "Company found",
-                        new CompanyResponse(c.getId(), c.getBorrowerId(), c.getCompanyName()))))
-                .orElseGet(() -> ResponseEntity.status(404).body(new ApiResponse<>(false, "Company not found", null)));
+                .map(c -> ResponseEntity.ok(
+                        new ApiResponse<>(true, "Company found",
+                                new CompanyResponse(
+                                        c.getId(),
+                                        c.getBorrowerId(),
+                                        c.getCompanyName()
+                                ))
+                ))
+                .orElseGet(() -> ResponseEntity.status(404)
+                        .body(new ApiResponse<>(false, "Company not found", null)));
     }
 
-    // B: LIST endpoint for dashboard - returns lightweight list items
+    /* ===============================
+       LIST
+       =============================== */
     @GetMapping
     public ResponseEntity<ApiResponse<List<CompanyListItem>>> listCompanies() {
-        List<Company> all = companyService.listAll();
-        List<CompanyListItem> dto = all.stream()
-                .map(c -> new CompanyListItem(c.getId(),
-                                             c.getBorrowerId(),
-                                             c.getCompanyName(),
-                                             c.getIndustry(),
-                                             c.getCurrency()))
+
+        List<CompanyListItem> dto = companyService.listAll()
+                .stream()
+                .map(c -> new CompanyListItem(
+                        c.getId(),
+                        c.getBorrowerId(),
+                        c.getCompanyName(),
+                        c.getIndustry(),
+                        c.getCurrency()
+                ))
                 .collect(Collectors.toList());
-        return ResponseEntity.ok(new ApiResponse<>(true, "Companies list", dto));
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "Companies list", dto)
+        );
     }
 
-    // C: DETAILS endpoint - returns full details including qualitative inputs
+    /* ===============================
+       DETAILS
+       =============================== */
     @GetMapping("/{id}/details")
-    public ResponseEntity<ApiResponse<CompanyDetailsDTO>> getCompanyDetails(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<CompanyDetailsDTO>> getCompanyDetails(
+            @PathVariable Long id
+    ) {
         return companyService.findById(id)
-                .map(c -> {
-                    CompanyDetailsDTO d = mapToDetails(c);
-                    return ResponseEntity.ok(new ApiResponse<>(true, "Company details", d));
-                })
-                .orElseGet(() -> ResponseEntity.status(404).body(new ApiResponse<>(false, "Company not found", null)));
+                .map(c -> ResponseEntity.ok(
+                        new ApiResponse<>(true, "Company details", mapToDetails(c))
+                ))
+                .orElseGet(() -> ResponseEntity.status(404)
+                        .body(new ApiResponse<>(false, "Company not found", null)));
     }
 
-    // helper to map entity -> DTO
+    /* ===============================
+       MAPPER
+       =============================== */
     private CompanyDetailsDTO mapToDetails(Company c) {
         CompanyDetailsDTO d = new CompanyDetailsDTO();
 
-        // core
         d.setId(c.getId());
         d.setBorrowerId(c.getBorrowerId());
         d.setCompanyName(c.getCompanyName());
@@ -94,12 +151,12 @@ public class CompanyController {
             d.setCreatedByEmail(c.getCreatedBy().getEmail());
         }
 
-        // owner additional support
         if (c.getOwnerAdditionalSupport() != null) {
-            d.setOwnerPersonalNetWorth(c.getOwnerAdditionalSupport().getOwnerPersonalNetWorth());
+            d.setOwnerPersonalNetWorth(
+                    c.getOwnerAdditionalSupport().getOwnerPersonalNetWorth()
+            );
         }
 
-        // account status
         if (c.getAccountStatus() != null) {
             d.setYearInBusiness(c.getAccountStatus().getYearInBusiness());
             d.setLocationOfBusiness(c.getAccountStatus().getLocationOfBusiness());
@@ -109,14 +166,21 @@ public class CompanyController {
             d.setNationalizationScheme(c.getAccountStatus().getNationalizationScheme());
         }
 
-        // account conduct
         if (c.getAccountConduct() != null) {
             d.setBounceCheques(c.getAccountConduct().getBounceCheques());
-            d.setOngoingCreditRelationship(c.getAccountConduct().getOngoingCreditRelationship());
-            d.setDelayInReceiptOfPrincipalProfitInstallments(c.getAccountConduct().getDelayInReceiptOfPrincipalProfitInstallments());
-            d.setNumberOfDelinquencyInHistory(c.getAccountConduct().getNumberOfDelinquencyInHistory());
+            d.setOngoingCreditRelationship(
+                    c.getAccountConduct().getOngoingCreditRelationship()
+            );
+            d.setDelayInReceiptOfPrincipalProfitInstallments(
+                    c.getAccountConduct().getDelayInReceiptOfPrincipalProfitInstallments()
+            );
+            d.setNumberOfDelinquencyInHistory(
+                    c.getAccountConduct().getNumberOfDelinquencyInHistory()
+            );
             d.setWriteOff(c.getAccountConduct().getWriteOff());
-            d.setFraudAndLitigationIncidences(c.getAccountConduct().getFraudAndLitigationIncidences());
+            d.setFraudAndLitigationIncidences(
+                    c.getAccountConduct().getFraudAndLitigationIncidences()
+            );
         }
 
         return d;
