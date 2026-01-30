@@ -24,7 +24,11 @@
 
     <dependencies>
     
-
+        <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <scope>provided</scope>
+        </dependency>
         <!-- Web + REST + Multipart + Jackson -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

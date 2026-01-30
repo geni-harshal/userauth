@@ -2,6 +2,7 @@ package com.example.userauth.controller;
 
 import com.example.userauth.dto.*;
 import com.example.userauth.entity.Company;
+import com.example.userauth.entity.FinancialSpreading;
 import com.example.userauth.service.CompanyService;
 
 import org.springframework.http.MediaType;
@@ -9,7 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -23,7 +24,7 @@ public class CompanyController {
     }
 
     /* ===============================
-       CREATE (JSON ONLY – NO PDF)
+       CREATE
        =============================== */
     @PostMapping
     public ResponseEntity<ApiResponse<CompanyResponse>> createCompany(
@@ -73,7 +74,7 @@ public class CompanyController {
     }
 
     /* ===============================
-       GET (SIMPLE)
+       GET
        =============================== */
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<CompanyResponse>> getCompany(
@@ -102,7 +103,7 @@ public class CompanyController {
     }
 
     /* ===============================
-       LIST (🔥 ONLY LOGGED-IN USER)
+       LIST
        =============================== */
     @GetMapping
     public ResponseEntity<ApiResponse<List<CompanyListItem>>> listCompanies(
@@ -133,7 +134,7 @@ public class CompanyController {
     }
 
     /* ===============================
-       DETAILS (FULL FORM VIEW)
+       DETAILS
        =============================== */
     @GetMapping("/{id}/details")
     public ResponseEntity<ApiResponse<CompanyDetailsDTO>> getCompanyDetails(
@@ -157,12 +158,9 @@ public class CompanyController {
     }
 
     /* ===============================
-       🔥 ANALYSIS (FINANCIAL SPREADING)
+       GET RAW ANALYSIS (JSON)
        =============================== */
-    @GetMapping(
-            value = "/{id}/analysis",
-            produces = MediaType.APPLICATION_JSON_VALUE
-    )
+    @GetMapping(value = "/{id}/analysis", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> getCompanyAnalysis(
             @PathVariable Long id,
             HttpServletRequest request
@@ -175,35 +173,40 @@ public class CompanyController {
         Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
 
         return companyService.findByIdAndUser(id, userId)
-                .map(c -> {
-                    if (c.getAnalysisJson() == null) {
-                        return ResponseEntity.noContent().build();
-                    }
-                    return ResponseEntity.ok(c.getAnalysisJson());
-                })
+                .map(c -> c.getAnalysisJson() == null
+                        ? ResponseEntity.noContent().build()
+                        : ResponseEntity.ok(c.getAnalysisJson()))
                 .orElseGet(() -> ResponseEntity.status(404)
                         .body("Company not found"));
     }
 
     /* ===============================
-       PDF PATH (DEBUG)
+       🔥 SAVE NORMALIZED ANALYSIS
        =============================== */
-    @GetMapping("/{id}/pdf-path")
-    public ResponseEntity<?> getPdfPath(
+    @PostMapping("/{id}/analysis/normalized")
+    public ResponseEntity<ApiResponse<Object>> saveNormalizedAnalysis(
             @PathVariable Long id,
+            @RequestBody CompanyAnalysisRequest req,
             HttpServletRequest request
     ) {
         Object authUser = request.getAttribute("authUser");
         if (authUser == null) {
-            return ResponseEntity.status(401).body("Unauthorized");
+            return ResponseEntity.status(401)
+                    .body(new ApiResponse<>(false, "Unauthorized", null));
         }
 
         Long userId = Long.parseLong(authUser.toString().split("\\|")[0]);
 
-        return companyService.findByIdAndUser(id, userId)
-                .map(c -> ResponseEntity.ok(c.getPdfPath()))
-                .orElseGet(() -> ResponseEntity.status(404)
-                        .body("Company not found"));
+        FinancialSpreading saved =
+                companyService.saveNormalizedSpreading(id, userId, req);
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("spreadingId", saved.getId());
+        resp.put("companyId", id);
+
+        return ResponseEntity.ok(
+                new ApiResponse<>(true, "Normalized spreading saved", resp)
+        );
     }
 
     /* ===============================
